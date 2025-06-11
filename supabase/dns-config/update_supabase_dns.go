@@ -45,7 +45,7 @@ func findAndUpdateValue(node *yaml.Node, path KeyPath, fullDNS string) {
 					replaced = strings.ReplaceAll(replaced, "example.com", fullDNS)
 					valNode.Value = replaced
 					valNode.Style = yaml.DoubleQuotedStyle
-					log.Printf("✅ Updated %s -> %s", strings.Join(path, "."), replaced)
+					log.Printf("Updated %s -> %s", strings.Join(path, "."), replaced)
 				}
 			} else {
 				// Descend into the next level
@@ -58,16 +58,16 @@ func findAndUpdateValue(node *yaml.Node, path KeyPath, fullDNS string) {
 func main() {
 	if len(os.Args) != 4 {
 		fmt.Println(`Usage:
-  go run update_supabase_dns.go <input.yaml> <output.yaml> <lb-dns-prefix>
+			go run update_supabase_dns.go <input.yaml> <output.yaml> <lb-dns-prefix>
 
-Example:
-  go run update_supabase_dns.go values.yaml updated.yaml lb-0a36988526c6443a947a8927f9190c0a-1
+			Example:
+			go run update_supabase_dns.go values.yaml updated.yaml lb-0a36988526c6443a947a8927f9190c0a-1
 
-How to find the prefix:
-  kubectl get svc demo-supabase-kong \
-    -o jsonpath="{.status.loadBalancer.ingress[0].hostname}"
-  // yields lb-xxx.upcloudlb.com; pass only the 'lb-xxx' part
-`)
+			How to find the prefix:
+			kubectl get svc demo-supabase-kong \
+				-o jsonpath="{.status.loadBalancer.ingress[0].hostname}"
+			// yields lb-xxx.upcloudlb.com; pass only the 'lb-xxx' part
+		`)
 		os.Exit(1)
 	}
 
@@ -79,18 +79,18 @@ How to find the prefix:
 	// Read the YAML
 	data, err := os.ReadFile(inFile)
 	if err != nil {
-		log.Fatalf("❌ Failed to read %s: %v", inFile, err)
+		log.Fatalf("Failed to read %s: %v", inFile, err)
 	}
 
 	// Parse into a Node (AST)
 	var root yaml.Node
 	if err := yaml.Unmarshal(data, &root); err != nil {
-		log.Fatalf("❌ Failed to parse YAML: %v", err)
+		log.Fatalf("Failed to parse YAML: %v", err)
 	}
 
 	// The real document is the first child of the root (DocumentNode)
 	if len(root.Content) < 1 {
-		log.Fatal("❌ No content in YAML document")
+		log.Fatal("No content in YAML document")
 	}
 	doc := root.Content[0]
 
@@ -102,15 +102,15 @@ How to find the prefix:
 	// Write the updated AST back to YAML
 	out, err := os.Create(outFile)
 	if err != nil {
-		log.Fatalf("❌ Cannot create %s: %v", outFile, err)
+		log.Fatalf("Cannot create %s: %v", outFile, err)
 	}
 	defer out.Close()
 
 	enc := yaml.NewEncoder(out)
 	enc.SetIndent(2)
 	if err := enc.Encode(&root); err != nil {
-		log.Fatalf("❌ Failed to write YAML: %v", err)
+		log.Fatalf("Failed to write YAML: %v", err)
 	}
 
-	fmt.Printf("🎉 Updated URLs to http://%s and wrote to %s\n", fullDNS, outFile)
+	fmt.Printf("Updated URLs to http://%s and wrote to %s\n", fullDNS, outFile)
 }

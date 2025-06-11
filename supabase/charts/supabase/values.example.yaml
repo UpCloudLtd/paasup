@@ -28,7 +28,7 @@ db:
         - postgres
     initialDelaySeconds: 3
   persistence:
-    enabled: false
+    enabled: true
 
 studio:
   image:

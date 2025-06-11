@@ -13,7 +13,10 @@
 #   - Assumes you have a custom Helm chart prepared for Supabase
 # ─────────────────────────────────────────────────────────────
 
-set -euo pipefail
+set -exuo pipefail
+
+# Resolve root directory of this script, even when symlinked
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 ### Input Params ###
 REGION="$1"
@@ -27,13 +30,16 @@ fi
 ### Naming Conventions ###
 CLUSTER_NAME="kube-paas-${REGION}"
 PRIVATE_NETWORK_NAME="kube-paas-private-network-${REGION}"
-NAMESPACE="kube-paas-${REGION}-${NAME}-$(date +%s)"
+# Namespace is unique per region and app name - Implement mechanisms to make sure that only the owner of the namespace can access it. For instance,
+# to avoid a different user do helm install with the same namespace as other user, overwriting somebody else's deployment.
+NAMESPACE="kube-paas-${REGION}-${NAME}"
 
 ### Paths ###
 KUBECONFIG_FILE="/tmp/${CLUSTER_NAME}_kubeconfig.yaml"
-CHART_DIR="/opt/supabase-chart"
+CHART_DIR="${SCRIPT_DIR}/charts/supabase"
 VALUES_FILE="${CHART_DIR}/values.example.yaml"
 UPDATED_VALUES_FILE="${CHART_DIR}/values.update.yaml"
+SECURE_VALUES_FILE="${CHART_DIR}/values.secure.yaml"
 
 log() {
   echo "[INFO] $1"
@@ -49,11 +55,19 @@ log "Checking if cluster '$CLUSTER_NAME' exists in region $REGION..."
 CLUSTER_ID=$(upctl kubernetes list -o json | jq -r ".[] | select(.name == \"$CLUSTER_NAME\" and .zone == \"$REGION\") | .uuid")
 
 if [[ -z "$CLUSTER_ID" ]]; then
-  log "Cluster not found. Creating private network: $PRIVATE_NETWORK_NAME"
-  upctl network create --name "$PRIVATE_NETWORK_NAME" --zone "$REGION" --ip-network address=10.0.2.0/24,dhcp=true || error_exit "Failed to create private network"
+  log "Cluster not found."
+  NETWORK_ID=$(upctl network list -o json | jq -r ".networks[] | select(.name == \"$PRIVATE_NETWORK_NAME\" and .zone == \"$REGION\") | .uuid")
+
+  if [[ -z "$NETWORK_ID" ]]; then
+    log "Creating private network: $PRIVATE_NETWORK_NAME"
+    ### TODO: Apparently I can't creeate 2 private networks with the same address even in different regions in the same account?
+    upctl network create --name "$PRIVATE_NETWORK_NAME" --zone "$REGION" --ip-network address=10.0.3.0/24,dhcp=true || error_exit "Failed to create private network"
+  else
+    log "Private network '$PRIVATE_NETWORK_NAME' already exists with ID: $NETWORK_ID"
+  fi
 
   log "Creating Kubernetes cluster: $CLUSTER_NAME"
-  upctl kubernetes create --name "$CLUSTER_NAME" --zone "$REGION" --network "$PRIVATE_NETWORK_NAME" --node-group count=1,name=my-minimal-node-group,plan=2xCPU-4GB, || error_exit "Failed to create Kubernetes cluster"
+  upctl kubernetes create --name "$CLUSTER_NAME" --zone "$REGION" --network "$PRIVATE_NETWORK_NAME" --kubernetes-api-allow-ip 0.0.0.0/0 --node-group count=1,name=my-minimal-node-group,plan=2xCPU-4GB, || error_exit "Failed to create Kubernetes cluster"
 
   sleep 5
   CLUSTER_ID=$(upctl kubernetes list -o json | jq -r ".[] | select(.name == \"$CLUSTER_NAME\" and .zone == \"$REGION\") | .uuid")
@@ -71,29 +85,58 @@ fi
 log "Downloading kubeconfig..."
 upctl kubernetes config "$CLUSTER_ID" --write "$KUBECONFIG_FILE" || error_exit "Failed to download kubeconfig"
 export KUBECONFIG="$KUBECONFIG_FILE"
+log "To talk to the cluster, run: export KUBECONFIG=$KUBECONFIG"
 
-### Clone Supabase chart (pre-patched version) ###
-# This should point to your already-patched repo
-if [[ ! -d "$CHART_DIR" ]]; then
-  log "Cloning custom Supabase chart repository..."
-  git clone --depth 1 https://your-forked-repo/supabase-kubernetes "$CHART_DIR" || error_exit "Failed to clone chart"
+# set ssupabase keys
+source "${SCRIPT_DIR}/supabase_keys.sh"
+JWT_SECRET="$(openssl rand -hex 20)"
+generate_supabase_keys "$JWT_SECRET" ## Generate ANON_KEY and SERVICE_ROLE_KEY
+log "ANON_KEY: ${ANON_KEY}"
+log "SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}"
+
+POSTGRES_PASSWORD="$(openssl rand -base64 12 | tr -d '=+/')"
+DASHBOARD_USERNAME="${DASHBOARD_USERNAME:-supabase}"
+DASHBOARD_PASSWORD="${DASHBOARD_PASSWORD:-$(openssl rand -base64 12 | tr -d '=+/')}"
+
+SMTP_HOST="${SMTP_HOST:-smtp.example.com}"
+SMTP_PORT="${SMTP_PORT:-587}"
+SMTP_USER="${SMTP_USER:-user@example.com}"
+SMTP_PASS="${SMTP_PASS:-$(openssl rand -base64 12 | tr -d '=+/')}"
+SMTP_SENDER_NAME="${SMTP_SENDER_NAME:-supabase@example.com}"
+
+POOLER_TENANT_ID="${POOLER_TENANT_ID:-tenant-$(openssl rand -hex 3)}"
+
+source "${SCRIPT_DIR}/write_secure_values.sh"
+
+# Write the secure values file
+write_secure_values "$SECURE_VALUES_FILE"
+
+### There is another issue when deploying 2 supabase instances in the same region, the second one fails to deploy because the LB name collides. 
+### I haven't been able to figure out how the LB name is created.
+
+log "Checking if Helm release '$NAMESPACE' exists..."
+if helm status "$NAMESPACE" -n "$NAMESPACE" &>/dev/null; then
+  log "Helm release already exists. Skipping install."
+else
+  log "Installing Supabase via Helm into namespace $NAMESPACE..."
+  helm install "$NAMESPACE" "$CHART_DIR" \
+        -n "$NAMESPACE" --create-namespace \
+        -f "$VALUES_FILE" \
+        -f "$SECURE_VALUES_FILE" \
+        || error_exit "Helm install failed"
 fi
-
-cd "$CHART_DIR/charts/supabase"
-
-log "Installing Supabase via Helm into namespace $NAMESPACE..."
-helm install "$NAMESPACE" . -n supabase --create-namespace -f "$VALUES_FILE" || error_exit "Helm install failed"
 
 ### Wait for LoadBalancer IP ###
 log "Waiting for Kong LoadBalancer external hostname..."
-for i in {1..30}; do
-  LB_HOSTNAME=$(kubectl get svc -n supabase -o jsonpath="{.items[?(@.metadata.name=='${NAMESPACE}-kong')].status.loadBalancer.ingress[0].hostname}" || true)
+for i in {1..60}; do
+  LB_HOSTNAME=$(kubectl get svc "$NAMESPACE-supabase-kong" -n "$NAMESPACE" -o json | jq -r '.status.loadBalancer.ingress[0].hostname // empty')
+
   if [[ -n "$LB_HOSTNAME" ]]; then
     log "Found LB Hostname: $LB_HOSTNAME"
     break
   fi
-  sleep 5
-  log "Waiting for LoadBalancer... ($i/30)"
+  sleep 20
+  log "Waiting for LoadBalancer... ($i/60)"
 done
 
 if [[ -z "$LB_HOSTNAME" ]]; then
@@ -102,11 +145,22 @@ fi
 
 ### Update env URLs ###
 log "Updating Supabase values file with real DNS..."
-go run /opt/tools/update_supabase_dns.go "$VALUES_FILE" "$UPDATED_VALUES_FILE" "$LB_HOSTNAME" || error_exit "DNS update script failed"
+GO_SCRIPT_DIR="${SCRIPT_DIR}/dns-config"
+DNS_PREFIX="${LB_HOSTNAME%%.upcloudlb.com}" 
+(
+  cd "$GO_SCRIPT_DIR" || error_exit "DNS script directory not found"
+  go run update_supabase_dns.go "$VALUES_FILE" "$UPDATED_VALUES_FILE" "$DNS_PREFIX" || error_exit "DNS update script failed"
+)
 
 log "Upgrading Helm release with final values..."
-helm upgrade "$NAMESPACE" . -n supabase -f "$UPDATED_VALUES_FILE" || error_exit "Helm upgrade failed"
+helm upgrade "$NAMESPACE" "$CHART_DIR" \
+    -n "$NAMESPACE" \
+    -f "$UPDATED_VALUES_FILE" \
+    -f "$SECURE_VALUES_FILE" \
+    || error_exit "Helm upgrade failed"
 
-log "✅ Supabase successfully deployed."
+log "Supabase successfully deployed."
 echo "Public endpoint: http://$LB_HOSTNAME:8000"
 echo "Kubernetes Namespace: $NAMESPACE"
+echo "Dashboard username: $DASHBOARD_USERNAME"
+echo "Dashboard password: $DASHBOARD_PASSWORD"
