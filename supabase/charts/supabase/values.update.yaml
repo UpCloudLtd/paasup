@@ -34,7 +34,7 @@ studio:
   environment:
     STUDIO_DEFAULT_ORGANIZATION: "My Organization"
     STUDIO_DEFAULT_PROJECT: "My Project"
-    SUPABASE_PUBLIC_URL: "http://lb-0a8e9479e3bb4fe0b22e3cefc8999541-1.upcloudlb.com:8000"
+    SUPABASE_PUBLIC_URL: "http://lb-0a8a1ec78488401c812c27267e210a33-1.upcloudlb.com:8000"
     NEXT_PUBLIC_ENABLE_LOGS: "true"
   livenessProbe:
     httpGet:
@@ -45,8 +45,8 @@ auth:
   image:
     tag: v2.143.0
   environment:
-    API_EXTERNAL_URL: "http://lb-0a8e9479e3bb4fe0b22e3cefc8999541-1.upcloudlb.com"
-    GOTRUE_SITE_URL: "http://lb-0a8e9479e3bb4fe0b22e3cefc8999541-1.upcloudlb.com:8000"
+    API_EXTERNAL_URL: "http://lb-0a8a1ec78488401c812c27267e210a33-1.upcloudlb.com"
+    GOTRUE_SITE_URL: "http://lb-0a8a1ec78488401c812c27267e210a33-1.upcloudlb.com:8000"
     GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
     GOTRUE_MAILER_AUTOCONFIRM: "true"
     GOTRUE_SMTP_ADMIN_EMAIL: "your-mail@example.com"
@@ -57,7 +57,7 @@ rest:
   image:
     tag: v12.0.1
   environment:
-    POSTGREST_SITE_URL: "http://lb-0a8e9479e3bb4fe0b22e3cefc8999541-1.upcloudlb.com:8000"
+    POSTGREST_SITE_URL: "http://lb-0a8a1ec78488401c812c27267e210a33-1.upcloudlb.com:8000"
 realtime:
   image:
     tag: v2.27.5
@@ -67,7 +67,7 @@ realtime:
       port: 4000
     initialDelaySeconds: 3
   environment:
-    PORTAL_URL: "http://lb-0a8e9479e3bb4fe0b22e3cefc8999541-1.upcloudlb.com:8000"
+    PORTAL_URL: "http://lb-0a8a1ec78488401c812c27267e210a33-1.upcloudlb.com:8000"
 meta:
   image:
     tag: v0.80.0
@@ -82,7 +82,7 @@ storage:
   persistence:
     enabled: false
   environment:
-    FILE_STORAGE_BACKEND_URL: "http://lb-0a8e9479e3bb4fe0b22e3cefc8999541-1.upcloudlb.com:8000"
+    FILE_STORAGE_BACKEND_URL: "http://lb-0a8a1ec78488401c812c27267e210a33-1.upcloudlb.com:8000"
 imgproxy:
   enabled: false
   image:
@@ -107,8 +107,8 @@ kong:
   environment:
     KONG_DECLARATIVE_CONFIG: /usr/local/kong/kong.yml
     KONG_LOG_LEVEL: info
-    SUPABASE_PUBLIC_URL: "http://lb-0a8e9479e3bb4fe0b22e3cefc8999541-1.upcloudlb.com:8000"
-    SUPABASE_STUDIO_URL: "http://lb-0a8e9479e3bb4fe0b22e3cefc8999541-1.upcloudlb.com:8000"
+    SUPABASE_PUBLIC_URL: "http://lb-0a8a1ec78488401c812c27267e210a33-1.upcloudlb.com:8000"
+    SUPABASE_STUDIO_URL: "http://lb-0a8a1ec78488401c812c27267e210a33-1.upcloudlb.com:8000"
   ingress:
     enabled: true
     className: "nginx"
