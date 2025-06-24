@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -exuo pipefail
 
 # ----------------------------
 # Helper: Base64URL encode STDIN

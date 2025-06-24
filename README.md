@@ -1,7 +1,7 @@
 # How to deploy supabase environment in kubernetes
 ```sh
 cd supabase
-./deploy_supabase.sh es-mad1 app1   # ./deploy_supabase.sh REGION APP_NAME
+./deploy_supabase.sh es-mad1 app1   # ./deploy_supabase.sh LOCATION APP_NAME
 ```
 
 Make sure the script finishes successfully
