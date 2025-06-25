@@ -175,7 +175,7 @@ create_cluster() {
     fi
 
   else
-    log "Cluster already exists. Skipping creation."
+    error_exit "Cluster already exists. please use --upgrade to update it."
   fi
 }
 
