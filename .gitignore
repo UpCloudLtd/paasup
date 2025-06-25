@@ -1,2 +1,3 @@
 supabase/charts/supabase/values.secure.yaml
 supabase/charts/supabase/values.update.yaml
+supabase/values.custom.yaml

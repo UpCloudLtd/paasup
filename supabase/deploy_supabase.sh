@@ -11,7 +11,6 @@
 #   - jq
 # Notes:
 #   - This script assumes it's running in a container or env with all tools preinstalled
-#   - Assumes you have a custom Helm chart prepared for Supabase - They shipped with the codebase
 # ─────────────────────────────────────────────────────────────
 
 set -exuo pipefail
@@ -23,7 +22,7 @@ error_exit() { echo "[ERROR] $1" >&2; exit 1; }
 # Globals variables
 SCRIPT_DIR=""
 LOCATION=""
-NAME=""
+APP_NAME=""
 CONFIG_FILE=""
 CLUSTER_NAME=""
 PRIVATE_NETWORK_NAME=""
@@ -33,17 +32,31 @@ CHART_DIR=""
 VALUES_FILE=""
 UPDATED_VALUES_FILE=""
 SECURE_VALUES_FILE=""
-
+UPGRADE=false
 
 parse_args() {
   # Resolve root directory of this script
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+  # Handle upgrade flag
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -u|--upgrade)
+        UPGRADE=true; shift;;
+      -*|--*)
+        echo "Unknown option: $1"; exit 1;;
+      *) break;;
+    esac
+  done
+
+  # Expect exactly location and app name
   if [[ $# -ne 2 ]]; then
-    echo "Usage: $0 <LOCATION> <NAME>"
+    echo "Usage: $0 [--upgrade] <LOCATION> <APP_NAME>"
     exit 1
   fi
+
   LOCATION="$1"
-  NAME="$2"
+  APP_NAME="$2"
   CONFIG_FILE="${SCRIPT_DIR}/deploy_supabase.env"
 }
 
@@ -58,9 +71,9 @@ load_config() {
 }
 
 init_names_and_paths() {
-  CLUSTER_NAME="kube-paas-${LOCATION}"
-  PRIVATE_NETWORK_NAME="kube-paas-private-network-${LOCATION}"
-  NAMESPACE="kube-paas-${LOCATION}-${NAME}"
+  CLUSTER_NAME="supabase-${APP_NAME}-${LOCATION}"
+  PRIVATE_NETWORK_NAME="supabase-net-${APP_NAME}-${LOCATION}"
+  NAMESPACE="supabase-${APP_NAME}-${LOCATION}"
   KUBECONFIG_FILE="/tmp/${CLUSTER_NAME}_kubeconfig.yaml"
   CHART_DIR="${SCRIPT_DIR}/charts/supabase"
   VALUES_FILE="${CHART_DIR}/values.example.yaml"
@@ -154,7 +167,7 @@ create_cluster() {
       --network "$PRIVATE_NETWORK_NAME" --kubernetes-api-allow-ip 0.0.0.0/0 \
       --node-group count=1,name=my-minimal-node-group,plan=2xCPU-4GB \
       -o json | jq -r '.uuid')
-      
+
     if [[ -z "$CLUSTER_ID" ]]; then
       error_exit "Cluster creation failed or not visible yet."
     else
@@ -164,6 +177,13 @@ create_cluster() {
   else
     log "Cluster already exists. Skipping creation."
   fi
+}
+
+get_cluster_id() {
+  log "Locating cluster '$CLUSTER_NAME' in region $LOCATION..."
+  CLUSTER_ID=$(upctl kubernetes list -o json \
+    | jq -r ".[] | select(.name==\"$CLUSTER_NAME\" and .zone==\"$LOCATION\").uuid")
+  [[ -n "$CLUSTER_ID" ]] || error_exit "Cluster '$CLUSTER_NAME' not found in region '$LOCATION'"
 }
 
 configure_kubeconfig() {
@@ -179,9 +199,6 @@ write_secure_values_file() {
   source "${SCRIPT_DIR}/write_secure_values.sh"
   write_secure_values "$SECURE_VALUES_FILE"
 }
-
-### There is another issue when deploying 2 supabase instances in the same region, the second one fails to deploy because the LB name collides. 
-### I haven't been able to figure out how the LB name is created.
 
 deploy_helm_release() {
   log "Checking if Helm release '$NAMESPACE' exists..."
@@ -224,9 +241,19 @@ update_dns() {
 }
 
 upgrade_release() {
-  log "Upgrading Helm release with final values..."
+  log "Upgrading Helm release '$NAMESPACE'..."
+
+  local extra_args=(-f "$UPDATED_VALUES_FILE" -f "$SECURE_VALUES_FILE")
+
+  # if the user has created a custom override file, include it too
+  CUSTOM_VALUES_FILE="${SCRIPT_DIR}/values.custom.yaml"
+  if [[ -f "$CUSTOM_VALUES_FILE" ]]; then
+    log "Applying user custom overrides from values.custom.yaml"
+    extra_args+=(-f "$CUSTOM_VALUES_FILE")
+  fi
+
   helm upgrade "$NAMESPACE" "$CHART_DIR" -n "$NAMESPACE" \
-    -f "$UPDATED_VALUES_FILE" -f "$SECURE_VALUES_FILE" \
+    "${extra_args[@]}" \
     || error_exit "Helm upgrade failed"
 }
 
@@ -254,12 +281,26 @@ print_summary() {
 main() {
   parse_args "$@"
   load_config
+  init_names_and_paths
+
+  if [[ "$UPGRADE" == true ]]; then
+    get_cluster_id
+    configure_kubeconfig
+
+    # Verify release exists
+    if ! helm status "$NAMESPACE" -n "$NAMESPACE" &>/dev/null; then
+      error_exit "Helm release '$NAMESPACE' not found; cannot upgrade."
+    fi
+    upgrade_release
+    exit 0
+  fi
+
+  # Full deploy flow
   generate_keys
   configure_studio
   configure_db
   configure_smtp
-  configure_s3
-  init_names_and_paths
+  configure_s3  
   create_cluster
   configure_kubeconfig
   write_secure_values_file
