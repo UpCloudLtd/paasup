@@ -20,11 +20,11 @@ Before running the script, ensure you have:
 
 - An **UpCloud account** with API access.
 - Tools installed:
-  - [`upctl`](https://developers.upcloud.com/) (configured with your API credentials)
-  - `helm`
-  - `kubectl`
-  - `jq`
-  - `git`
+  - [`upctl`](https://upcloudltd.github.io/upcloud-cli/) (configured with your API credentials)
+  - [`helm`](https://helm.sh/docs/intro/install/)
+  - [`kubectl`](https://kubernetes.io/docs/tasks/tools/)
+  - [`jq`](https://jqlang.org/download/)
+  - [`git`](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git)
 
 ## 📦 Cloning the Repository
 
