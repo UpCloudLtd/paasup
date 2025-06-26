@@ -13,7 +13,7 @@
 #   - This script assumes it's running in a container or env with all tools preinstalled
 # ─────────────────────────────────────────────────────────────
 
-set -exuo pipefail
+set -euo pipefail
 
 # Logging helpers
 log() { echo "[INFO] $1"; }

@@ -1,50 +1,148 @@
-# How to deploy supabase environment in kubernetes
-```sh
-cd supabase
-./deploy_supabase.sh es-mad1 app1   # ./deploy_supabase.sh LOCATION APP_NAME
+
+# Supabase Deployment on UpCloud Managed Kubernetes
+
+This repository provides a ready-to-use script to deploy a complete [Supabase](https://supabase.com/) backend on [UpCloud Managed Kubernetes](https://upcloud.com/products/kubernetes), offering a secure, persistent, and customizable setup ideal for both development and production use.
+
+## 🚀 What This Deploys
+
+Running the script sets up a fully working Supabase instance that includes:
+
+- **PostgreSQL Database**: Backed by Kubernetes Persistent Volume Claims (PVCs) for data durability.
+- **Supabase Studio**: Web-based admin dashboard for managing schema, auth, and file storage.
+- **Kong API Gateway**: Public gateway for secure access to Supabase services.
+- **Real-time Engine and REST APIs**: Auto-generated for database tables.
+- **File Storage**: S3-compatible storage support (optional).
+- **Authentication Service**: Integrated support for JWT sessions, social login, and email/password sign-in.
+
+## 🛠 Prerequisites
+
+Before running the script, ensure you have:
+
+- An **UpCloud account** with API access.
+- Tools installed:
+  - [`upctl`](https://developers.upcloud.com/) (configured with your API credentials)
+  - `helm`
+  - `kubectl`
+  - `jq`
+  - `git`
+
+## 📦 Cloning the Repository
+
+```bash
+git clone git@github.com:UpCloudLtd/paasup.git
+cd paasup/supabase
 ```
 
-Make sure the script finishes successfully
+## ⚙️ Configuration
 
-# How to login the studio UI
-The deployment script will output the end point and the user/pwd that you will use to connect:
-```sh
-Public endpoint: http://lb-0a3d0c515fa34dfb8b3af33ced93fbae-1.upcloudlb.com:8000
-Kubernetes Namespace: kube-paas-fi-hel1-app1
-Dashboard username: supabase
-Dashboard password: jFEkLb37QeJtVT6
+Customize your deployment using the `deploy_supabase.env` file.
+
+### Example: `deploy_supabase.env`
+
+```env
+# Studio Admin
+DASHBOARD_USERNAME=supabase
+DASHBOARD_PASSWORD=""                               # Will be generated if not set
+
+# PostgreSQL
+POSTGRES_PASSWORD=""                                # Will be generated if not set
+
+# S3 Integration
+ENABLE_S3=true
+S3_KEY_ID=your-access-key
+S3_ACCESS_KEY=your-secret-key
+S3_BUCKET=supabase-bucket
+S3_ENDPOINT=https://your-s3-endpoint
+S3_REGION=europe-1
+
+# SMTP Notifications
+ENABLE_SMTP=false
+SMTP_HOST=smtp.mailgun.org
+SMTP_PORT=587
+SMTP_USER=postmaster@mg.example.com
+SMTP_PASS=your-smtp-password
+SMTP_SENDER_NAME="MyApp <noreply@example.com>"
 ```
 
-# Implementation
-The script will deploy a supabase backend in a kubernetes cluster.
-The script will create the kubernetes cluster if it does not exists one in the selected area.
-The script will create a permanent volume and corresponding claim so the database is persisted.
-The script will change all the default keys used in supabase as advice here: https://supabase.com/docs/guides/self-hosting/docker#generate-api-keys
-The script will output the KUBECONFIG so users can connect and inspect the cluster
-The script will output the endpoint to connect to the studio ui and the generated user/pwd (Dashboard username and Dashboard password)
-The script will output also variables needed for client apps to connect to the supabase backend: JWT_SECRET, ANON_KEY and SERVICE_ROLE_KEY
+Unset values like passwords will be auto-generated during deployment.
 
-# Current problems
-You might get a problem generating the private network that the kubernetes cluster uses. Apparently we can't creeate 2 private networks with the same address even in different regions in the same account. If you get an error related to this, go to the deploy_supabase.sh script and change the address values: address=10.0.3.0/24
+## 🚀 Deploying Supabase
 
-There is an issue when deploying 2 supabase instances in the same region, the second one fails to deploy because the load balancer name collides. The load balancer names actually look like malformed. I haven't been able to figure out how these names are created and this will need a second look.
+Use the following command to deploy your Supabase instance:
 
-If we fix the problem with the LB names we can potentially deploy more than one supabase in the same cluster. There is no work done to ensure security and isolation of more than one supabase deployment within one cluster
+```bash
+./deploy_supabase.sh <location> <app_name>
+```
 
-# Improvements
-Namespace is unique per region and app name - Implement mechanisms to make sure that only the owner of the namespace can access it. For instance, to avoid a different user do helm install with the same namespace as other user, overwriting somebody else's deployment.
+Example:
 
-When creating the kubernetes cluster the script allows any IP address to access the cluster. We need to think the best way to do this.
+```bash
+./deploy_supabase.sh fi-hel1 myapp
+```
 
-Improve isolation between supabases inside the same kubernetes cluster
+This will:
 
-Set email env variables so supabase can send emails. For instance confirmation emails when creating a user
+- Create (if needed) a Kubernetes cluster on UpCloud with 1 node (`2xCPU-4GB`).
+- Configure a private network.
+- Create a persistent volume for PostgreSQL.
+- Deploy all Supabase services and components.
+- Set up a LoadBalancer for public access.
 
-## Notes
+## 🔁 Upgrading an Existing Deployment
 
-Added as a project resource the Helm charts from 'https://github.com/supabase-community/supabase-kubernetes/tree/main'. We want to have a stable copy of the charts in our project. Upgrading must be taking into account in the future.
+To apply updates or configuration changes:
 
-'values.examples.yaml' has some changes to make easier the configuration. I am using a go script to change the urls later in this file but it might be overengineer and it would suffice to have a variable for the URL that is later changed by the sed. This will be a future improvement
+```bash
+./deploy_supabase.sh --upgrade <location> <app_name>
+```
 
+If a `values.custom.yaml` file exists in the `supabase/` directory, it will be used during the upgrade.
 
+## 🔧 Advanced Customization
 
+Create a `values.custom.yaml` file to override Helm chart values:
+
+```yaml
+storage:
+  environment:
+    TENANT_ID: "supabase1"
+
+secret:
+  s3:
+    accessKey: "your-new-secret"
+```
+
+This file allows advanced users to fine-tune settings beyond `deploy_supabase.env`. These values override those in `charts/supabase/values.yaml`.
+
+> **Note:** You should understand Helm chart structures before using advanced overrides.
+
+## 📡 Script Output: How to Connect
+
+When the script completes, it prints useful access details:
+
+```bash
+[INFO] Supabase deployed successfully!
+[INFO] Public endpoint: http://lb-xxxx.upcloudlb.com:8000
+[INFO] Namespace: supabase-myapp-fi-hel1
+[INFO] ANON_KEY: eyJhbGciOiJIUzI1...
+[INFO] SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1...
+[INFO] POSTGRES_PASSWORD: ********
+[INFO] DASHBOARD_USERNAME: supabase
+[INFO] DASHBOARD_PASSWORD: ********
+[INFO] S3 ENABLED: true
+[INFO] SMTP ENABLED: false
+```
+
+These values help you:
+
+- Connect Supabase SDKs to your backend.
+- Log in to Supabase Studio.
+- Access your API endpoints and manage your project.
+
+## 🤝 Contributing
+
+Contributions, issues, and suggestions are welcome! Please open an issue or submit a PR.
+
+## 📄 License
+
+MIT License
