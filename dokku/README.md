@@ -4,8 +4,6 @@ Deploy and manage web apps on UpCloud Managed Kubernetes with Dokku — using si
 
 This project automates the provisioning of a full Dokku PaaS builder in a Kubernetes cluster, backed by UpCloud's infrastructure.
 
----
-
 ## What Is This?
 
 This setup runs a Dokku builder inside Kubernetes and lets you:
@@ -17,8 +15,6 @@ This setup runs a Dokku builder inside Kubernetes and lets you:
 
 Great for developers, internal tools, MVPs, client projects, and even microservice experimentation.
 
----
-
 ## Features
 
 - One-command deployment with `./deploy_dokku.sh deploy <region> <project>`
@@ -26,8 +22,6 @@ Great for developers, internal tools, MVPs, client projects, and even microservi
 - Ingress and TLS support via cert-manager
 - Multi-app support with custom app names
 - Compatible with public or private GitHub Container Registry (GHCR)
-
----
 
 ## Architecture
 
@@ -60,7 +54,6 @@ graph TD
   Ingress --> App2
   Ingress --> App3
 
-
 ## Requirements
 
 ### General
@@ -78,8 +71,6 @@ graph TD
 - `make`
 
 > Docker is *not required* to deploy (only needed to build or modify the Dokku image manually, which is not the common case)
-
----
 
 ## Environment Variables
 
@@ -104,8 +95,6 @@ export GITHUB_USERNAME=myuser
 export CERT_MANAGER_EMAIL=me@example.com
 ```
 
----
-
 ## Cloning the Code
 
 ```bash
@@ -113,8 +102,6 @@ git clone git@github.com:UpCloudLtd/paasup.git
 Or
 git clone https://github.com/UpCloudLtd/paasup.git
 ```
-
----
 
 ## Deploying Dokku
 
@@ -130,8 +117,6 @@ Deploy Ingress, cert-manager, and the Dokku builder pod
 Wait for the LoadBalancer hostname
 Configure Dokku and set the global domain
 Output instructions for app deployment
-
----
 
 ## Deploying your First App
 
@@ -186,7 +171,6 @@ You can deploy more apps in the cluster. They will be available on their own sub
 make create-app APP_NAME=another-app
 git remote add dokku dokku:another-app
 git push dokku master
-
 ```
 
 ## Contributing
