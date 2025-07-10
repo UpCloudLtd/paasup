@@ -50,8 +50,8 @@ These must be set before running the deployment:
 
 | Variable             | Required | Description |
 |----------------------|----------|-------------|
-| `GITHUB_PAT`         | ✅ Yes   | GitHub token with `write:packages` and `read:packages` to push app images |
-| `GITHUB_USERNAME`    | ✅ Yes   | Your GitHub username |
+| `GITHUB_PAT`         | Yes   | GitHub token with `write:packages` and `read:packages` to push app images |
+| `GITHUB_USERNAME`    | Yes   | Your GitHub username |
 | `CERT_MANAGER_EMAIL` | Optional | Email for Let's Encrypt (default: ops@example.com) |
 | `GLOBAL_DOMAIN`      | Optional | Wildcard domain (e.g. example.com). If unset, script will use the LoadBalancer hostname |
 | `SSH_PATH`           | Optional | SSH private key path (default: `~/.ssh/id_rsa`) |
