@@ -28,7 +28,8 @@ export CERT_MANAGER_EMAIL="${CERT_MANAGER_EMAIL:-ops@example.com}"
 export SSH_PATH="${SSH_PATH:-$HOME/.ssh/id_rsa}"
 export SSH_PUB_PATH="${SSH_PUB_PATH:-${SSH_PATH}.pub}"
 export GITHUB_PACKAGE_URL="${GITHUB_PACKAGE_URL:-ghcr.io}"
-export GLOBAL_DOMAIN=""
+GLOBAL_DOMAIN="${GLOBAL_DOMAIN:-}"
+export NUM_NODES="${NUM_NODES:-1}"
 
 check_or_create_network() {
   NETWORK_ID=$(upctl network list -o json |
@@ -66,7 +67,7 @@ create_cluster() {
     --label "stacks.upcloud.com/created-by=dokku-script" \
     --label "stacks.upcloud.com/stack=dokku" \
     --label "stacks.upcloud.com/dokku-version=0.35.18" \
-    --node-group count=1,name=default,plan=2xCPU-4GB \
+    --node-group count=$NUM_NODES,name=default,plan=2xCPU-4GB \
     -o json | jq -r '.uuid'
 }
 
@@ -92,9 +93,12 @@ wait_for_kubernetes_api() {
   error_exit "Timed out waiting for Kubernetes API to become available"
 }
 
-
-
 wait_for_ingress_hostname() {
+  if [[ -n "$GLOBAL_DOMAIN" ]]; then
+    log "GLOBAL_DOMAIN was provided: $GLOBAL_DOMAIN"
+    return
+  fi
+
   log "Waiting for LoadBalancer external hostname from ingress-nginx..."
   for i in {1..30}; do
   HOSTNAME=$(kubectl get svc ingress-nginx-controller -n ingress-nginx \
