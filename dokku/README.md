@@ -26,35 +26,6 @@ Great for developers, internal tools, MVPs, client projects, and even microservi
 ## Architecture
 <img width="1133" height="722" alt="Screenshot from 2025-07-10 12-45-41" src="https://github.com/user-attachments/assets/3e1c2551-1665-4144-878e-8c77b98e3c21" />
 
-graph TD
-  subgraph Developer
-    Dev[Developer]
-  end
-
-  subgraph "Kubernetes Cluster"
-    DokkuPod[Dokku Pod]
-    NodePort[NodePort]
-    Ingress[Ingress Controller]
-    App1[App Pod 1]
-    App2[App Pod 2]
-    App3[App Pod 3]
-  end
-
-  Internet[Internet / DNS]
-  User[User]
-
-  Dev -->|git push | NodePort --> DokkuPod
-
-  DokkuPod -- deploys --> App1
-  DokkuPod --> App2
-  DokkuPod --> App3
-
-  User -- app1.example.com --> Internet
-  Internet --> Ingress
-  Ingress --> App1
-  Ingress --> App2
-  Ingress --> App3
-
 ## Requirements
 
 ### General
