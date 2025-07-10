@@ -24,6 +24,7 @@ Great for developers, internal tools, MVPs, client projects, and even microservi
 - Compatible with public or private GitHub Container Registry (GHCR)
 
 ## Architecture
+<img width="1133" height="722" alt="Screenshot from 2025-07-10 12-45-41" src="https://github.com/user-attachments/assets/3e1c2551-1665-4144-878e-8c77b98e3c21" />
 
 graph TD
   subgraph Developer
