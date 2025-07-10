@@ -7,6 +7,7 @@ set -euo pipefail
 # Requires: upctl, kubectl, helm, jq, make, ssh keys, github PAT env vars
 # ─────────────────────────────────────────────────────────────
 
+export VERSION=1.0.0
 log() { echo "[INFO] $1"; }
 error_exit() { echo "[ERROR] $1" >&2; exit 1; }
 
@@ -67,6 +68,7 @@ create_cluster() {
     --label "stacks.upcloud.com/created-by=dokku-script" \
     --label "stacks.upcloud.com/stack=dokku" \
     --label "stacks.upcloud.com/dokku-version=0.35.18" \
+    --label "stacks.upcloud.com/script-version=$VERSION" \
     --node-group count=$NUM_NODES,name=default,plan=2xCPU-4GB \
     -o json | jq -r '.uuid'
 }
