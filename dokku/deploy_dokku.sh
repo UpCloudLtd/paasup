@@ -111,7 +111,7 @@ wait_for_ingress_hostname() {
       GLOBAL_DOMAIN="$HOSTNAME"
       break
   fi
-  sleep 10
+  sleep 30
   log "Still waiting for ingress LB hostname... ($i/30)"
   done
 
