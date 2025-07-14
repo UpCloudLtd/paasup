@@ -55,22 +55,24 @@ check_or_create_network() {
 create_cluster() {
   CLUSTER_ID=$(upctl kubernetes list -o json |
     jq -r ".[] | select(.name==\"$CLUSTER_NAME\" and .zone==\"$LOCATION\").uuid")
-  if [[ -n "$CLUSTER_ID" ]]; then
-    error_exit "Cluster already exists: $CLUSTER_NAME"
+  if [[ -z "$CLUSTER_ID" ]]; then
+
+    check_or_create_network
+
+    log "Creating Kubernetes cluster: $CLUSTER_NAME"
+    upctl kubernetes create --name "$CLUSTER_NAME" --zone "$LOCATION" \
+        --network "$PRIVATE_NETWORK_NAME" \
+        --kubernetes-api-allow-ip 0.0.0.0/0 \
+        --label "stacks.upcloud.com/created-by=dokku-script" \
+        --label "stacks.upcloud.com/stack=dokku" \
+        --label "stacks.upcloud.com/dokku-version=0.35.18" \
+        --label "stacks.upcloud.com/script-vers=$VERSION" \
+        --node-group count=$NUM_NODES,name=default,plan=2xCPU-4GB \
+        -o json | jq -r '.uuid'
+  else
+    # TODO: Check what happens if we rerun the installation. Does it nuke existing Dokku apps?
+    log "Cluster already exists: $CLUSTER_NAME"
   fi
-
-  check_or_create_network
-
-  log "Creating Kubernetes cluster: $CLUSTER_NAME"
-  upctl kubernetes create --name "$CLUSTER_NAME" --zone "$LOCATION" \
-    --network "$PRIVATE_NETWORK_NAME" \
-    --kubernetes-api-allow-ip 0.0.0.0/0 \
-    --label "stacks.upcloud.com/created-by=dokku-script" \
-    --label "stacks.upcloud.com/stack=dokku" \
-    --label "stacks.upcloud.com/dokku-version=0.35.18" \
-    --label "stacks.upcloud.com/script-version=$VERSION" \
-    --node-group count=$NUM_NODES,name=default,plan=2xCPU-4GB \
-    -o json | jq -r '.uuid'
 }
 
 download_kubeconfig() {
