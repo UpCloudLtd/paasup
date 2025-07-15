@@ -144,6 +144,7 @@ configure: check-dokku check-ssh
 	@kubectl exec -i $(POD_NAME) -n dokku -- dokku domains:set-global $(GLOBAL_DOMAIN) 1> /dev/null
 	@kubectl exec -i $(POD_NAME) -n dokku -- dokku registry:set --global server $(GITHUB_PACKAGE_URL) 1> /dev/null
 	@kubectl exec -i $(POD_NAME) -n dokku -- dokku registry:set --global image-repo-template "$(GITHUB_USERNAME)/{{ .AppName }}" 1> /dev/null
+	@kubectl exec -i $(POD_NAME) -n dokku -- dokku builder:set --global selected herokuish # Use herokuish globally since CNB requires Docker access
 	@echo "Waiting for load balancer address up to 10 minutes..."
 	@kubectl wait --for=jsonpath=".status.loadBalancer.ingress[0].hostname" --timeout=10m svc/ingress-nginx-controller -n ingress-nginx 1> /dev/null
 	@LB_ADDRESS=$$($(call get_loadbalancer_address)); \

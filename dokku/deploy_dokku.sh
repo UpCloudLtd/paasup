@@ -55,24 +55,22 @@ check_or_create_network() {
 create_cluster() {
   CLUSTER_ID=$(upctl kubernetes list -o json |
     jq -r ".[] | select(.name==\"$CLUSTER_NAME\" and .zone==\"$LOCATION\").uuid")
-  if [[ -z "$CLUSTER_ID" ]]; then
-
-    check_or_create_network
-
-    log "Creating Kubernetes cluster: $CLUSTER_NAME"
-    upctl kubernetes create --name "$CLUSTER_NAME" --zone "$LOCATION" \
-        --network "$PRIVATE_NETWORK_NAME" \
-        --kubernetes-api-allow-ip 0.0.0.0/0 \
-        --label "stacks.upcloud.com/created-by=dokku-script" \
-        --label "stacks.upcloud.com/stack=dokku" \
-        --label "stacks.upcloud.com/dokku-version=0.35.18" \
-        --label "stacks.upcloud.com/script-vers=$VERSION" \
-        --node-group count=$NUM_NODES,name=default,plan=2xCPU-4GB \
-        -o json | jq -r '.uuid'
-  else
-    # TODO: Check what happens if we rerun the installation. Does it nuke existing Dokku apps?
-    log "Cluster already exists: $CLUSTER_NAME"
+  if [[ -n "$CLUSTER_ID" ]]; then
+    error_exit "Cluster already exists: $CLUSTER_NAME"
   fi
+
+  check_or_create_network
+
+  log "Creating Kubernetes cluster: $CLUSTER_NAME"
+  upctl kubernetes create --name "$CLUSTER_NAME" --zone "$LOCATION" \
+    --network "$PRIVATE_NETWORK_NAME" \
+    --kubernetes-api-allow-ip 0.0.0.0/0 \
+    --label "stacks.upcloud.com/created-by=dokku-script" \
+    --label "stacks.upcloud.com/stack=dokku" \
+    --label "stacks.upcloud.com/dokku-version=0.35.18" \
+    --label "stacks.upcloud.com/version=$VERSION" \
+    --node-group count=$NUM_NODES,name=default,plan=2xCPU-4GB \
+    -o json | jq -r '.uuid'
 }
 
 download_kubeconfig() {
@@ -165,51 +163,70 @@ delete_stack() {
 }
 
 print_final_instructions() {
-  log ""
+  DOKKU_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}')
+  LB_ADDRESS=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+  echo ""
   log "Dokku installed and configured successfully!"
+  echo ""
+   echo "---------------------------------------------"
+  log "Before deploying apps you will have to set your local environment:"
+  echo "export KUBECONFIG=$KUBECONFIG_FILE"
+  echo "export GLOBAL_DOMAIN=$GLOBAL_DOMAIN"
+  echo ""
+  log "If you have a DNS name add the following DNS record to your domain:" 
+  echo "  CNAME *.$GLOBAL_DOMAIN $LB_ADDRESS"
+  echo ""
+  log "Otherwise, follow the local testing instructions below."
   log ""
+  log "Add ssh config to your ~/.ssh/config (create it if you don't have it already):"
+  echo "Host dokku"
+  echo "  Hostname ${DOKKU_IP}"
+  echo "  Port 30022"
+  echo "  User dokku"
+  echo "  IdentityFile ${SSH_PATH}"
+  echo ""
+  echo "---------------------------------------------"
   log "Deploy your first app:"
-  log ""
-  log "1. Create Dokku app:"
-  log "   make create-app APP_NAME=demo-app"
-  log ""
-  log "2. Clone a sample app (e.g. Heroku Node.js sample):"
-  log "   mkdir apps && cd apps"
-  log "   git clone https://github.com/heroku/node-js-sample.git demo-app"
-  log "   cd demo-app"
-  log ""
-  log "3. Set the Git remote:"
-  log "   git remote add dokku dokku@dokku:demo-app"
-  log ""
-  log "4. Push the app:"
-  log "   git push dokku master"
-  log ""
-  log "---------------------------------------------"
+  echo ""
+  echo "1. Create Dokku app:"
+  echo "   make create-app APP_NAME=demo-app"
+  echo ""
+  echo "2. Clone a sample app (e.g. Heroku Node.js sample):"
+  echo "   mkdir apps && cd apps"
+  echo "   git clone https://github.com/heroku/node-js-sample.git demo-app"
+  echo "   cd demo-app"
+  echo ""
+  echo "3. Set the Git remote:"
+  echo "   git remote add dokku dokku@dokku:demo-app"
+  echo ""
+  echo "4. Push the app:"
+  echo "   git push dokku master"
+  echo ""
   log "Local testing (if you don't have a real DNS)"
-  log ""
-  log "1. Get the external IP of the load balancer:"
-  log "   dig +short $GLOBAL_DOMAIN"
-  log "2. Edit your local /etc/hosts file:"
-  log "   sudo vim /etc/hosts"
-  log ""
-  log "   Add a line like this:"
-  log "     <EXTERNAL-IP> demo-app.${GLOBAL_DOMAIN}"
-  log ""
-  log "   Example:"
-  log "     5.22.219.157 demo-app.${GLOBAL_DOMAIN}"
-  log ""
-  log "3. Open your browser and visit:"
-  log "   https://demo-app.${GLOBAL_DOMAIN}"
-  log ""
+  echo ""
+  echo "1. Get the external IP (<EXTERNAL-IP) of the load balancer:"
+  echo "   dig +short $LB_ADDRESS"
+  echo "2. Edit your local /etc/hosts file:"
+  echo "   sudo vim /etc/hosts"
+  echo ""
+  echo "   Add a line like this:"
+  echo "     <EXTERNAL-IP> demo-app.${GLOBAL_DOMAIN}"
+  echo ""
+  echo "   Example:"
+  echo "     5.22.219.157 demo-app.${GLOBAL_DOMAIN}"
+  echo "3. Open your browser and visit:"
+  echo "   https://demo-app.${GLOBAL_DOMAIN}"
+  echo ""
+  echo "---------------------------------------------" 
   log "You can repeat this for more apps using:"
-  log "   make create-app APP_NAME=another-app"
-  log "   git remote add dokku dokku@dokku:another-app"
-  log "   git push dokku master"
-  log ""
-  log "---------------------------------------------"
-  log "Connectiing to the cluster"
-  log "export KUBECONFIG=$KUBECONFIG_FILE"
-  log ""
+  echo "   make create-app APP_NAME=another-app"
+  echo "   git remote add dokku dokku@dokku:another-app"
+  echo "   git push dokku master"
+  echo ""
+  echo "---------------------------------------------"
+  log "We have several make targets to help you manage your Dokku apps:"
+  echo "Run 'make help' to see the available commands."
+  echo ""
   log "Enjoy 🚀"
 }
 
