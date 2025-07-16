@@ -224,8 +224,8 @@ list-apps: check-dokku
 	@kubectl exec -i $(POD_NAME) -n dokku -- dokku apps:list
 	@echo ""
 
-.PHONY: invoke
-invoke: check-dokku
+.PHONY: dokku
+dokku: check-dokku
 	$(eval POD_NAME := $(shell $(call get_dokku_pod_name)))
 	@echo "Using pod: $(POD_NAME)"
 	@kubectl exec -i $(POD_NAME) -n dokku -- dokku $(filter-out $@,$(MAKECMDGOALS))
