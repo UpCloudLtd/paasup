@@ -50,8 +50,8 @@ These must be set before running the deployment:
 
 | Variable             | Required | Description |
 |----------------------|----------|-------------|
-| `GITHUB_PAT`         | Yes   | GitHub token with `write:packages` and `read:packages` to push app images |
-| `GITHUB_USERNAME`    | Yes   | Your GitHub username |
+| `GITHUB_PAT`         | ✅ Yes   | GitHub Personal Access Token with `write:packages` and `read:packages`. Dokku uses this token to push your app’s container images into GitHub Container Registry (GHCR). Every time you `git push dokku`, Dokku builds a Docker image of your app and needs to authenticate to a registry to store that image. Without this token, deployments cannot complete. |
+| `GITHUB_USERNAME`    | ✅ Yes   | Your GitHub username |
 | `CERT_MANAGER_EMAIL` | Optional | Email for Let's Encrypt (default: ops@example.com) |
 | `GLOBAL_DOMAIN`      | Optional | Wildcard domain (e.g. example.com). If unset, script will use the LoadBalancer hostname |
 | `SSH_PATH`           | Optional | SSH private key path (default: `~/.ssh/id_rsa`) |
@@ -66,6 +66,17 @@ export GITHUB_PAT=ghp_abc123...
 export GITHUB_USERNAME=myuser
 export CERT_MANAGER_EMAIL=me@example.com
 ```
+
+### Why is the GitHub token needed?
+
+Each time you `git push dokku`, your app is built into a Docker image. That image must be stored somewhere accessible to the Kubernetes cluster so it can be deployed.  
+In this setup, the GitHub Container Registry (GHCR) is used as the image registry.  
+
+The `GITHUB_PAT` token allows Dokku to:
+- **Push new images** of your apps into GHCR (`write:packages`)
+- **Pull images** back into the Kubernetes cluster (`read:packages`)
+
+This token is never used outside the build/deploy process. If you prefer, you can create a dedicated service account or robot user in GitHub just for this purpose.
 
 ## Cloning the Code
 
