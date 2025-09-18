@@ -1,0 +1,250 @@
+#!/bin/bash
+set -euo pipefail
+
+# ─────────────────────────────────────────────────────────────
+# Script: deploy_dokku_stack.sh
+# Usage: ./deploy_dokku_stack.sh <create|delete> <LOCATION> <PROJECT_NAME>
+# Requires: upctl, kubectl, helm, jq, make, ssh keys, github PAT env vars
+# Read https://upcloud.com/docs/guides/dokku/ to know how to set up env variables
+# ─────────────────────────────────────────────────────────────
+
+export VERSION=1.0.0
+log() { echo "[INFO] $1"; }
+error_exit() { echo "[ERROR] $1" >&2; exit 1; }
+
+# Parse args
+if [[ $# -ne 3 ]]; then
+  echo "Usage: $0 <deploy|delete> <LOCATION> <PROJECT_NAME>"
+  exit 1
+fi
+
+ACTION="$1"
+LOCATION="$2"
+PROJECT="$3"
+export CLUSTER_NAME="dokku-${PROJECT}-${LOCATION}"
+export PRIVATE_NETWORK_NAME="dokku-net-${PROJECT}-${LOCATION}"
+export KUBECONFIG_FILE="/tmp/${CLUSTER_NAME}_kubeconfig.yaml"
+
+# Config values
+export CERT_MANAGER_EMAIL="${CERT_MANAGER_EMAIL:-ops@example.com}"
+export SSH_PATH="${SSH_PATH:-$HOME/.ssh/id_rsa}"
+export SSH_PUB_PATH="${SSH_PUB_PATH:-${SSH_PATH}.pub}"
+export GITHUB_PACKAGE_URL="${GITHUB_PACKAGE_URL:-ghcr.io}"
+GLOBAL_DOMAIN="${GLOBAL_DOMAIN:-}"
+export NUM_NODES="${NUM_NODES:-1}"
+
+check_or_create_network() {
+  NETWORK_ID=$(upctl network list -o json |
+    jq -r ".networks // [] | .[] | select(.name==\"$PRIVATE_NETWORK_NAME\" and .zone==\"$LOCATION\").uuid")
+  if [[ -z "$NETWORK_ID" ]]; then
+    log "Private network not found. Attempting to create..."
+    for i in {1..10}; do
+      CIDR="10.0.$(( RANDOM % 254 + 1 )).0/24"
+      log "Trying CIDR $CIDR..."
+      if upctl network create --name "$PRIVATE_NETWORK_NAME" --zone "$LOCATION" \
+        --ip-network address=${CIDR},dhcp=true; then
+        log "Created private network at $CIDR"
+        return
+      fi
+    done
+    error_exit "Failed to create private network after 10 attempts"
+  else
+    log "Private network already exists: $NETWORK_ID"
+  fi
+}
+
+create_cluster() {
+  CLUSTER_ID=$(upctl kubernetes list -o json |
+    jq -r ".[] | select(.name==\"$CLUSTER_NAME\" and .zone==\"$LOCATION\").uuid")
+  if [[ -n "$CLUSTER_ID" ]]; then
+    error_exit "Cluster already exists: $CLUSTER_NAME"
+  fi
+
+  check_or_create_network
+
+  log "Creating Kubernetes cluster: $CLUSTER_NAME"
+  upctl kubernetes create --name "$CLUSTER_NAME" --zone "$LOCATION" \
+    --network "$PRIVATE_NETWORK_NAME" \
+    --kubernetes-api-allow-ip 0.0.0.0/0 \
+    --label "stacks.upcloud.com/created-by=dokku-script" \
+    --label "stacks.upcloud.com/stack=dokku" \
+    --label "stacks.upcloud.com/dokku-version=0.35.18" \
+    --label "stacks.upcloud.com/version=$VERSION" \
+    --node-group count=$NUM_NODES,name=default,plan=2xCPU-4GB \
+    -o json | jq -r '.uuid'
+}
+
+download_kubeconfig() {
+  CLUSTER_ID=$(upctl kubernetes list -o json |
+    jq -r ".[] | select(.name==\"$CLUSTER_NAME\" and .zone==\"$LOCATION\").uuid")
+  [[ -n "$CLUSTER_ID" ]] || error_exit "Cluster not found"
+  upctl kubernetes config "$CLUSTER_ID" --write "$KUBECONFIG_FILE"
+  export KUBECONFIG="$KUBECONFIG_FILE"
+  log "KUBECONFIG=$KUBECONFIG_FILE"
+}
+
+wait_for_kubernetes_api() {
+  log "Waiting for Kubernetes API to become available..."
+  for i in {1..30}; do
+    if kubectl version --request-timeout=5s >/dev/null 2>&1; then
+      log "Kubernetes API is ready."
+      return 0
+    fi
+    sleep 10
+    log "Still waiting for Kubernetes API... ($i/30)"
+  done
+  error_exit "Timed out waiting for Kubernetes API to become available"
+}
+
+wait_for_ingress_hostname() {
+  if [[ -n "$GLOBAL_DOMAIN" ]]; then
+    log "GLOBAL_DOMAIN was provided: $GLOBAL_DOMAIN"
+    return
+  fi
+
+  log "Waiting for LoadBalancer external hostname from ingress-nginx..."
+  for i in {1..30}; do
+  HOSTNAME=$(kubectl get svc ingress-nginx-controller -n ingress-nginx \
+      -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+  if [[ -n "$HOSTNAME" ]]; then
+      GLOBAL_DOMAIN="$HOSTNAME"
+      break
+  fi
+  sleep 30
+  log "Still waiting for ingress LB hostname... ($i/30)"
+  done
+
+  if [[ -z "$GLOBAL_DOMAIN" ]]; then
+  error_exit "Timed out waiting for ingress LB hostname"
+  fi
+
+  log "Ingress external hostname resolved: $GLOBAL_DOMAIN"
+}
+
+create_stack() {
+  create_cluster
+  download_kubeconfig
+  wait_for_kubernetes_api
+
+  log "Installing ingress-nginx"
+  make install-ingress
+
+  wait_for_ingress_hostname
+
+  log "Installing certification manager"
+  make install-cert-manager
+
+  log "Installing Dokku"
+  make install-dokku
+
+  log "Configuring Dokku with provided parameters..."
+  make configure \
+    GITHUB_USERNAME="$GITHUB_USERNAME" \
+    GITHUB_PAT="$GITHUB_PAT" \
+    GLOBAL_DOMAIN="$GLOBAL_DOMAIN" \
+    CERT_MANAGER_EMAIL="$CERT_MANAGER_EMAIL"
+}
+
+delete_stack() {
+  CLUSTER_ID=$(upctl kubernetes list -o json |
+    jq -r ".[] | select(.name==\"$CLUSTER_NAME\" and .zone==\"$LOCATION\").uuid")
+  [[ -n "$CLUSTER_ID" ]] || error_exit "No such cluster: $CLUSTER_NAME"
+
+  log "Deleting Kubernetes cluster: $CLUSTER_NAME"
+  upctl kubernetes delete --uuid "$CLUSTER_ID"
+
+  log "Deleting private network if exists..."
+  NETWORK_ID=$(upctl network list -o json |
+    jq -r ".networks[] | select(.name==\"$PRIVATE_NETWORK_NAME\" and .zone==\"$LOCATION\").uuid")
+  if [[ -n "$NETWORK_ID" ]]; then
+    upctl network delete --uuid "$NETWORK_ID"
+  fi
+
+  log "Deleted Dokku stack: $PROJECT"
+}
+
+print_final_instructions() {
+  DOKKU_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}')
+  LB_ADDRESS=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+  echo ""
+  log "Dokku installed and configured successfully!"
+  echo ""
+   echo "---------------------------------------------"
+  log "Before deploying apps you will have to set your local environment:"
+  echo "export KUBECONFIG=$KUBECONFIG_FILE"
+  echo "export GLOBAL_DOMAIN=$GLOBAL_DOMAIN"
+  echo ""
+  log "If you have a DNS name add the following DNS record to your domain:" 
+  echo "  CNAME *.$GLOBAL_DOMAIN $LB_ADDRESS"
+  echo ""
+  log "Otherwise, follow the local testing instructions below."
+  log ""
+  log "Add ssh config to your ~/.ssh/config (create it if you don't have it already):"
+  echo "Host dokku"
+  echo "  Hostname ${DOKKU_IP}"
+  echo "  Port 30022"
+  echo "  User dokku"
+  echo "  IdentityFile ${SSH_PATH}"
+  echo ""
+  echo "---------------------------------------------"
+  log "Deploy your first app:"
+  echo ""
+  echo "1. Create Dokku app:"
+  echo "   make create-app APP_NAME=demo-app"
+  echo ""
+  echo "2. Clone a sample app (e.g. Heroku Node.js sample):"
+  echo "   mkdir apps && cd apps"
+  echo "   git clone https://github.com/heroku/node-js-sample.git demo-app"
+  echo "   cd demo-app"
+  echo ""
+  echo "3. Set the Git remote:"
+  echo "   git remote add dokku dokku@dokku:demo-app"
+  echo ""
+  echo "4. Push the app:"
+  echo "   git push dokku master"
+  echo ""
+  log "Local testing (if you don't have a real DNS)"
+  echo ""
+  echo "1. Get the external IP (<EXTERNAL-IP) of the load balancer:"
+  echo "   dig +short $LB_ADDRESS"
+  echo "2. Edit your local /etc/hosts file:"
+  echo "   sudo vim /etc/hosts"
+  echo ""
+  echo "   Add a line like this:"
+  echo "     <EXTERNAL-IP> demo-app.${GLOBAL_DOMAIN}"
+  echo ""
+  echo "   Example:"
+  echo "     5.22.219.157 demo-app.${GLOBAL_DOMAIN}"
+  echo "3. Open your browser and visit:"
+  echo "   https://demo-app.${GLOBAL_DOMAIN}"
+  echo ""
+  echo "---------------------------------------------" 
+  log "You can repeat this for more apps using:"
+  echo "   make create-app APP_NAME=another-app"
+  echo "   git remote add dokku dokku@dokku:another-app"
+  echo "   git push dokku master"
+  echo ""
+  echo "---------------------------------------------"
+  log "We have several make targets to help you manage your Dokku apps:"
+  echo "Run 'make help' to see the available commands."
+  echo ""
+  log "Enjoy 🚀"
+}
+
+
+main() {
+  case "$ACTION" in
+    deploy)
+      create_stack
+      print_final_instructions
+      ;;
+    delete)
+      delete_stack
+      ;;
+    *)
+      error_exit "Unknown action: $ACTION. Use 'create' or 'delete'"
+      ;;
+  esac
+}
+
+main
