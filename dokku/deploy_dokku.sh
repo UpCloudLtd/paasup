@@ -34,7 +34,7 @@ export NUM_NODES="${NUM_NODES:-1}"
 
 check_or_create_network() {
   NETWORK_ID=$(upctl network list -o json |
-    jq -r ".networks[] | select(.name==\"$PRIVATE_NETWORK_NAME\" and .zone==\"$LOCATION\").uuid")
+    jq -r ".networks // [] | .[] | select(.name==\"$PRIVATE_NETWORK_NAME\" and .zone==\"$LOCATION\").uuid")
   if [[ -z "$NETWORK_ID" ]]; then
     log "Private network not found. Attempting to create..."
     for i in {1..10}; do
