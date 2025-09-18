@@ -5,6 +5,7 @@ set -euo pipefail
 # Script: deploy_dokku_stack.sh
 # Usage: ./deploy_dokku_stack.sh <create|delete> <LOCATION> <PROJECT_NAME>
 # Requires: upctl, kubectl, helm, jq, make, ssh keys, github PAT env vars
+# Read https://upcloud.com/docs/guides/dokku/ to know how to set up env variables
 # ─────────────────────────────────────────────────────────────
 
 export VERSION=1.0.0
