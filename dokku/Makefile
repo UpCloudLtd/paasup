@@ -24,7 +24,7 @@ help:
 	@echo "  create-app             Create a new app"
 	@echo "  delete-app             Delete an app"
 	@echo "  list-apps              List all apps"
-	@echo "  invoke                 Run arbitrary Dokku commands"
+	@echo "  dokku                  Run arbitrary Dokku commands"
 	@echo "  check-dokku            Check if Dokku is installed and ready"
 	@echo "  check-ssh              Check if SSH keys are configured"
 	@echo "  cleanup-docker         Clean up Docker resources"
